@@ -88,7 +88,7 @@ void loop() {
     SerialUSB.write(c);
   }
 
-  // ---- Optional debug ----
+  // ---- Print to serial for debug ----
   SerialUSB.print("Vertical Velocity: ");
   SerialUSB.print(velocity, 3);
   SerialUSB.print(" m/s | Rotation: ");
@@ -96,5 +96,5 @@ void loop() {
   SerialUSB.print(" °/s | netAz: ");
   SerialUSB.println(netAz, 3);
 
-  delay(50);  // 20 Hz
+  delay(500);  // 20 Hz
 }
