@@ -1,100 +1,61 @@
 #include <Wire.h>
-#include <Arduino_LSM6DS3.h>
+#include <Arduino_LSM6DS3.h>   // For LSM6DS3 IMU
 #include <Adafruit_Sensor.h>
-#include <Adafruit_BMP3XX.h>
+#include <Adafruit_BMP3XX.h>   // (kept for consistency if needed)
 
-Adafruit_BMP3XX bmp;  // retained for compatibility, unused
-
-// Velocity integration variables
-float velocity = 0.0;         // vertical velocity (m/s)
-unsigned long lastUpdate = 0;
-float gravityRef = 9.81;      // measured gravity reference
-
-// Calibration settings
-const int CALIBRATION_SAMPLES = 200;  // how many samples to average
-const float DRIFT_DECAY = 0.98;       // how fast velocity decays toward 0 when idle
-const float MOTION_THRESHOLD = 0.1;   // m/s² threshold for "no movement"
-const float ROTATION_THRESHOLD = 1.0; // °/s threshold for "no rotation"
+Adafruit_BMP3XX bmp;  // unused but retained for compatibility
 
 void setup() {
+  // Initialize SerialUSB for debugging
   SerialUSB.begin(115200);
   while (!SerialUSB);
-  SerialUSB.println("SAMD21 XBee + LSM6DS3 (Velocity + Rotation + Drift Fix) Starting...");
+  SerialUSB.println("SAMD21 XBee + LSM6DS3 Unified System Starting...");
 
-  Serial1.begin(9600);  // XBee communication
+  // Initialize Serial1 for XBee communication
+  Serial1.begin(9600);
   SerialUSB.println("Serial1 (XBee) active at 9600 baud.");
 
+  // Initialize the LSM6DS3 IMU
   if (!IMU.begin()) {
     SerialUSB.println("Failed to detect LSM6DS3 sensor!");
     while (1);
   }
   SerialUSB.println("LSM6DS3 detected successfully!");
-
-  // --- Calibrate gravity reference ---
-  SerialUSB.println("Calibrating gravity reference... keep still.");
-  float sumAz = 0;
-  int samples = 0;
-  while (samples < CALIBRATION_SAMPLES) {
-    float ax, ay, az;
-    if (IMU.accelerationAvailable()) {
-      IMU.readAcceleration(ax, ay, az);
-      sumAz += az;
-      samples++;
-      delay(5);
-    }
-  }
-  gravityRef = sumAz / samples;
-  SerialUSB.print("Calibrated gravity: ");
-  SerialUSB.println(gravityRef, 4);
-
-  lastUpdate = millis();
 }
 
 void loop() {
+  // ---- Read sensor data ----
   float ax, ay, az;
   float gx, gy, gz;
 
   if (IMU.accelerationAvailable()) IMU.readAcceleration(ax, ay, az);
   if (IMU.gyroscopeAvailable())    IMU.readGyroscope(gx, gy, gz);
 
-  unsigned long currentTime = millis();
-  float dt = (currentTime - lastUpdate) / 1000.0;
-  lastUpdate = currentTime;
+  // ---- Format and transmit data ----
+  // Comma-separated: ax,ay,az,gx,gy,gz
+  Serial1.print(ax, 3); Serial1.print(",");
+  Serial1.print(ay, 3); Serial1.print(",");
+  Serial1.print(az, 3); Serial1.print(",");
+  Serial1.print(gx, 3); Serial1.print(",");
+  Serial1.print(gy, 3); Serial1.print(",");
+  Serial1.println(gz, 3);
 
-  // Calculate net acceleration (remove calibrated gravity)
-  float netAz = az - gravityRef;
-
-  // Compute rotation magnitude
-  float rotation = sqrt(gx * gx + gy * gy + gz * gz);
-
-  // Integrate acceleration to velocity
-  velocity += netAz * dt;
-
-  // ---- Drift correction ----
-  // If the board is nearly still (no acceleration & rotation), decay velocity toward 0
-  if (fabs(netAz) < MOTION_THRESHOLD && rotation < ROTATION_THRESHOLD) {
-    velocity *= DRIFT_DECAY;
-  }
-
-  // ---- Transmit two values ----
-  // Format: velocity,rotation
-  Serial1.print(velocity, 3);
-  Serial1.print(",");
-  Serial1.println(rotation, 3);
-
-  // ---- Check for incoming data from XBee ----
+  // ---- Check for incoming XBee data ----
   while (Serial1.available()) {
     char c = Serial1.read();
-    SerialUSB.write(c);
+    SerialUSB.write(c);  // Echo received data to USB serial monitor
   }
 
-  // ---- Print to serial for debug ----
-  SerialUSB.print("Vertical Velocity: ");
-  SerialUSB.print(velocity, 3);
-  SerialUSB.print(" m/s | Rotation: ");
-  SerialUSB.print(rotation, 3);
-  SerialUSB.print(" °/s | netAz: ");
-  SerialUSB.println(netAz, 3);
+  // ---- Optional: also print locally ----
+  SerialUSB.print("Accel: ");
+  SerialUSB.print(ax, 3); SerialUSB.print(", ");
+  SerialUSB.print(ay, 3); SerialUSB.print(", ");
+  SerialUSB.println(az, 3);
 
-  delay(500);  // 20 Hz
+  SerialUSB.print("Gyro: ");
+  SerialUSB.print(gx, 3); SerialUSB.print(", ");
+  SerialUSB.print(gy, 3); SerialUSB.print(", ");
+  SerialUSB.println(gz, 3);
+
+  delay(200); // sample rate ~5Hz
 }
